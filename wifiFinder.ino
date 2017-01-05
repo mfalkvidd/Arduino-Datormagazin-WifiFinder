@@ -220,9 +220,22 @@ void printRecord(struct WifiAP wifiAP) {
   Serial.print(" last checked: ");
   Serial.print(wifiAP.lastChecked);
   Serial.print(" status: ");
-  Serial.print(wifiAP.lastStatus);
+  Serial.print(statusToText(wifiAP.lastStatus));
   Serial.print(" encryption type: ");
   Serial.println(wifiAP.encryptionType);
+}
+
+String statusToText(byte status) {
+  switch (status) {
+    case AP_OK:
+      return "OK";
+    case AP_CONNECT_FAILED:
+      return "Failed to connect to AP";
+    case AP_TEST_FAILED:
+      return "Connection test failed";
+    case AP_ENCRYPTED:
+      return "Encrypted";
+  }
 }
 
 boolean testConnection() {
