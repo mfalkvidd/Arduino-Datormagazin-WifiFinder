@@ -222,7 +222,22 @@ void printRecord(struct WifiAP wifiAP) {
   Serial.print(" status: ");
   Serial.print(statusToText(wifiAP.lastStatus));
   Serial.print(" encryption type: ");
-  Serial.println(wifiAP.encryptionType);
+  Serial.println(encryptionTypeToText(wifiAP.encryptionType));
+}
+
+String encryptionTypeToText(byte encType) {
+  switch (encType) {
+    case ENC_TYPE_WEP:
+      return "WEP";
+    case ENC_TYPE_TKIP:
+      return "WPA / PSK (TKIP)";
+    case ENC_TYPE_CCMP:
+      return "WPA2 / PSK (CCMP)";
+    case ENC_TYPE_NONE:
+      return "open network";
+    case ENC_TYPE_AUTO:
+      return "WPA / WPA2 / PSK (AUTO)";
+  }
 }
 
 String statusToText(byte status) {
