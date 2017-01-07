@@ -22,7 +22,7 @@ extern "C" { // For ESP sleep
 #define ON LOW // The led on Wemos D1 Mini is lit when the pin is pulled low
 #define OFF HIGH
 
-const char* db_name = "/db/wifiAP2.db";
+const char* db_name = "/db/wifiAP.db";
 File dbFile;
 unsigned long lastCloseTime = 0;
 unsigned long lastAlertTime = 0;
@@ -103,6 +103,7 @@ void showAll() {
 }
 
 WifiAP findByBSSID(String BSSIDstr) {
+  unsigned long startTime = millis();
   WifiAP foundAP;
   Serial.print("findByBSSID is searching for ");
   Serial.println(BSSIDstr);
@@ -113,6 +114,7 @@ WifiAP findByBSSID(String BSSIDstr) {
     {
       if (String(foundAP.BSSIDstr) == BSSIDstr) {
         foundAP.id = recno;
+        Serial.printf("Find took %ul\n", millis() - startTime);
         return foundAP;
       }
     }
@@ -237,6 +239,8 @@ String encryptionTypeToText(byte encType) {
       return "open network";
     case ENC_TYPE_AUTO:
       return "WPA / WPA2 / PSK (AUTO)";
+    default:
+      return "0";
   }
 }
 
@@ -339,6 +343,7 @@ void openDB() {
     dbFile = SPIFFS.open(db_name, "r+");
   } else {
     dbFile = SPIFFS.open(db_name, "w+");
+    createTable();
   }
 
   if (!dbFile) {
@@ -355,9 +360,12 @@ void openDB() {
     Serial.println("ERROR");
     Serial.println("Did not find database in the file " + String(db_name));
   }
+  createTable();
+}
 
+void createTable() {
   Serial.print("Creating new table... ");
-  result = db.create(0, NUM_ROWS * (unsigned int)sizeof(wifiAP), (unsigned int)sizeof(wifiAP));
+  EDB_Status result = db.create(0, NUM_ROWS * (unsigned int)sizeof(wifiAP), (unsigned int)sizeof(wifiAP));
   if (result != EDB_OK) {
     Serial.println("ERROR");
     stopEverything();
