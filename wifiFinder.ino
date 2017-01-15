@@ -72,6 +72,7 @@ void setup() {
 
 void loop()
 {
+  unsigned long startTime = millis();
   doScan();
   Serial.printf("Last close time: %lu Current time: %lu\n", lastCloseTime, millis());
   if (lastCloseTime + DB_CLOSE_INTERVAL < millis()) {
@@ -81,8 +82,12 @@ void loop()
     openDB();
     showAll();
   }
-  wifi_set_sleep_type(LIGHT_SLEEP_T);
-  delay(SLEEP_TIME);
+  unsigned long timeElapsed = millis() - startTime;
+  unsigned long timeToSleep = SLEEP_TIME - timeElapsed;
+  if (timeToSleep < SLEEP_TIME) {
+    wifi_set_sleep_type(LIGHT_SLEEP_T);
+    delay(timeToSleep);
+  }
 }
 
 void showAll() {
@@ -114,7 +119,8 @@ WifiAP findByBSSID(String BSSIDstr) {
     {
       if (String(foundAP.BSSIDstr) == BSSIDstr) {
         foundAP.id = recno;
-        Serial.printf("Find took %ul\n", millis() - startTime);
+        unsigned long searchTime = millis() - startTime;
+        Serial.printf("Find took %ul\n", searchTime);
         return foundAP;
       }
     }
@@ -310,7 +316,7 @@ boolean connectToAP(char* ssid, char* key) {
 void signalUser() {
   if (lastAlertTime == 0 || millis() > lastAlertTime + ALERT_INTERVAL) {
     analogWrite(D2, 512);
-    delay(1000);
+    delay(2000);
     analogWrite(D2, 0);
     lastAlertTime = millis();
   }
