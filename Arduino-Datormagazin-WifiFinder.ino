@@ -21,6 +21,7 @@ extern "C" { // For ESP sleep
 #define AP_ENCRYPTED 4
 #define ON LOW // The led on Wemos D1 Mini is lit when the pin is pulled low
 #define OFF HIGH
+#define WAIT_LIMIT 100
 
 const char* db_name = "/db/wifiAP.db";
 File dbFile;
@@ -120,7 +121,7 @@ WifiAP findByBSSID(String BSSIDstr) {
       if (String(foundAP.BSSIDstr) == BSSIDstr) {
         foundAP.id = recno;
         unsigned long searchTime = millis() - startTime;
-        Serial.printf("Find took %ul\n", searchTime);
+        Serial.printf("Find took %lu\n", searchTime);
         return foundAP;
       }
     }
@@ -179,9 +180,12 @@ void doScan() {
     if (WiFi.encryptionType(i) != ENC_TYPE_NONE) {
       Serial.print("Skipping encrypted AP ");
       Serial.println(WiFi.SSID(i));
-      theAP.lastChecked = currentTime;
-      theAP.lastStatus = AP_ENCRYPTED;
-      saveAP(theAP);
+      if (theAP.lastChecked == 0) {
+        // Only write to flash the first time we see this AP, to not wear out the flash
+        theAP.lastChecked = currentTime;
+        theAP.lastStatus = AP_ENCRYPTED;
+        saveAP(theAP);
+      }
       continue;
     }
 
@@ -225,7 +229,7 @@ void printRecord(struct WifiAP wifiAP) {
   Serial.print(wifiAP.BSSIDstr);
   Serial.print(" SSID: ");
   Serial.print(wifiAP.SSIDstr);
-  Serial.print(" last checked: ");
+  Serial.print(" timestamp: ");
   Serial.print(wifiAP.lastChecked);
   Serial.print(" status: ");
   Serial.print(statusToText(wifiAP.lastStatus));
@@ -304,7 +308,12 @@ boolean connectToAP(char* ssid, char* key) {
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, key);
-  int status = WiFi.waitForConnectResult();
+  byte waitCount = 0;
+  int status;
+  while (status = WiFi.status() == WL_DISCONNECTED && waitCount < WAIT_LIMIT) {
+    delay(100);
+    waitCount++;
+  }
   if (status != WL_CONNECTED) {
     Serial.println("Connection Failed");
     return false;
