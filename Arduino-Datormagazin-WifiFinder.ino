@@ -1,5 +1,6 @@
 #include <EDB.h>
 #include <FS.h> // For SPIFFS
+#include "limits.h"
 
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
@@ -7,10 +8,10 @@ extern "C" { // For ESP sleep
 #include <user_interface.h>
 }
 
-#define NUM_ROWS 4096 // Will we encounter more than 4096 access points?
+#define NUM_ROWS 8192 // Maximum umber of access points in the database
 #define RECHECK_INTERVAL (2*60*1000) // Retry AP if more than 2 minutes has passed sine we last tried.
 #define LED_PIN D4
-#define SLEEP_TIME (20*1000) // How often (in milliseconds) to scan for APs
+#define SLEEP_TIME (1) // How often (in milliseconds) to scan for APs
 #define ALERT_INTERVAL (5*60*1000) // Don't beep more often than every 5 minutes
 #define DB_CLOSE_INTERVAL (6*60*1000) // Write out db every 6 minutes - increase to put less strain on the flash.
 #define VERIFY_URL "http://captive.apple.com/hotspot-detect.html"
@@ -22,6 +23,7 @@ extern "C" { // For ESP sleep
 #define ON LOW // The led on Wemos D1 Mini is lit when the pin is pulled low
 #define OFF HIGH
 #define WAIT_LIMIT 100
+#define LRU_CACHE_SIZE 512
 
 const char* db_name = "/db/wifiAP.db";
 File dbFile;
@@ -33,14 +35,68 @@ struct WifiAP {
   unsigned long id;
   char BSSIDstr[18];
   char SSIDstr[33];
-  long lastChecked;
+  unsigned long lastChecked;
   byte lastStatus;
   uint8_t encryptionType;
 }
 wifiAP;
 
+struct SeenAP {
+  char BSSIDstr[18];
+  unsigned long lastSeen;
+};
+
+struct SeenAP SeenAPs[LRU_CACHE_SIZE] = {};
+
 // Empty AP
 const WifiAP noAP = {};
+
+boolean saveSeenAP(String BSSIDstr) {
+  unsigned long startTime = millis();
+  boolean retval = true;
+  signed int LRUPos = getLRUPos(BSSIDstr);
+  if (LRUPos == -1) {
+    saveNewSeenAP(BSSIDstr);
+  } else {
+    SeenAPs[LRUPos].lastSeen = millis();
+    retval = false;
+  }
+  Serial.print("saveSeenAP took ");
+  Serial.println(millis() - startTime);
+  return retval;
+}
+
+signed int saveNewSeenAP(String BSSIDstr) {
+  // Saves the AP in the oldest position in the LRU cache and returns the position
+  signed int pos = findOldestPos();
+  SeenAPs[pos].lastSeen = millis();
+  BSSIDstr.toCharArray(SeenAPs[pos].BSSIDstr, 18);
+  return pos;
+}
+
+signed int findOldestPos() {
+  unsigned long startTime = millis();
+  unsigned long oldestTime = ULONG_MAX;
+  signed int oldestPos = 0;
+  for (signed int pos = 0; pos < LRU_CACHE_SIZE; pos++ ) {
+    if (SeenAPs[pos].lastSeen < oldestTime) {
+      oldestTime = SeenAPs[pos].lastSeen;
+      oldestPos = pos;
+    }
+  }
+  Serial.print("findOldest took ");
+  Serial.println(millis() - startTime);
+  return oldestPos;
+}
+
+signed int getLRUPos(String BSSIDstr) {
+  for (signed int pos = 0; pos < LRU_CACHE_SIZE; pos++ ) {
+    if (String(SeenAPs[pos].BSSIDstr) == BSSIDstr) {
+      return pos;
+    }
+  }
+  return -1;
+}
 
 void writer (unsigned long address, byte data) {
   dbFile.seek(address, SeekSet);
@@ -60,11 +116,12 @@ EDB db(&writer, &reader);
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(115200);
+  Serial.println("Starting in 15 seconds");
   randomSeed(analogRead(0));
 
   SPIFFS.begin();
   digitalWrite(LED_PIN, ON);
-  delay(5000);
+  delay(15000);
   digitalWrite(LED_PIN, OFF);
 
   openDB();
@@ -81,7 +138,6 @@ void loop()
     lastCloseTime = millis();
     dbFile.close();
     openDB();
-    showAll();
   }
   unsigned long timeElapsed = millis() - startTime;
   unsigned long timeToSleep = SLEEP_TIME - timeElapsed;
@@ -170,6 +226,10 @@ void doScan() {
     Serial.println((WiFi.encryptionType(i) == ENC_TYPE_NONE) ? " " : "*");
 
     unsigned long currentTime = millis();
+    if (!saveSeenAP(WiFi.BSSIDstr(i))) {
+      // We have already seen this AP recently. Skip it.
+      continue;
+    }
     WifiAP theAP = findByBSSID(WiFi.BSSIDstr(i));
     Serial.print("findByBSSID returned:");
     printRecord(theAP);
@@ -389,6 +449,7 @@ void createTable() {
 }
 
 void showScanDone(byte numAPs) {
+  return;
   if (numAPs == 0) {
     Serial.println("No networks found");
     digitalWrite(LED_PIN, ON);
